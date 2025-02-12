@@ -3,8 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
-	"strings"
-	"unicode"
+	"regexp"
 
 	"github.com/tarm/serial"
 )
@@ -37,28 +36,29 @@ func main() {
 		}
 
 		if n > 0 {
-			rawData := buffer[:n]
-			cleanData := filterPrintable(rawData)
-			cleanData = strings.TrimSpace(cleanData) // Hapus spasi kosong
+			rawData := string(buffer[:n])
+			weight := parseWeight(rawData) // Ambil angka dengan tanda
 
-			// Hanya cetak jika data berubah
-			if cleanData != "" && cleanData != prevData {
-				fmt.Printf("Raw Data (Hex)   : %X\n", rawData)
-				fmt.Printf("Filtered String  : %s\n", cleanData)
+			// Hanya cetak jika data berubah dan tidak kosong
+			if weight != "" && weight != prevData {
+				fmt.Printf("Filtered Weight  : %s\n", weight)
 				fmt.Println("----------------------------------------")
-				prevData = cleanData // Simpan data sebagai referensi untuk loop berikutnya
+				prevData = weight // Simpan data untuk perbandingan berikutnya
 			}
 		}
 	}
 }
 
-// Fungsi untuk membuang karakter non-printable
-func filterPrintable(data []byte) string {
-	var result []rune
-	for _, b := range data {
-		if unicode.IsPrint(rune(b)) {
-			result = append(result, rune(b))
-		}
+// Fungsi untuk mengekstrak berat dari data mentah
+func parseWeight(data string) string {
+	re := regexp.MustCompile(`([+-])\s*0*(\d+)Kg`) // Cari pola "+ 000010Kg" atau "- 000160Kg"
+	match := re.FindStringSubmatch(data)
+
+	if len(match) == 3 {
+		sign := match[1]   // + atau -
+		number := match[2] // Angka tanpa leading zero
+		return sign + number
 	}
-	return string(result)
+
+	return ""
 }
