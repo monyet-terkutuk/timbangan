@@ -149,12 +149,12 @@ func main() {
 	})
 
 	// Endpoint SSE untuk streaming berat
-	e.GET("/stream", func(c echo.Context) error {
+	e.GET("/weight/stream", func(c echo.Context) error {
 		// Buka koneksi serial jika belum terbuka
 		portMutex.Lock()
 		if port == nil {
 			config := &serial.Config{
-				Name:     "COM3", //COM3, COM4, /dev/ttyUSB0
+				Name:     "/dev/ttyUSB0", //COM3, COM4, /dev/ttyUSB0
 				Baud:     9600,
 				Size:     7,
 				Parity:   serial.ParityEven,
