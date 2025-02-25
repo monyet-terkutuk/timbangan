@@ -26,6 +26,7 @@ require (
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/golang/protobuf v1.5.0 // indirect
 	github.com/jacobsa/go-serial v0.0.0-20180131005756-15cf729a72d4 // indirect
+	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/nyaruka/phonenumbers v1.0.55 // indirect

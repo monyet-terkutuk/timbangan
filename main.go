@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"sync"
 
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/tarm/serial"
@@ -25,10 +27,9 @@ var (
 	}{}
 	port       *serial.Port
 	portMutex  sync.Mutex
-	lastWeight string // Simpan berat terakhir yang diterima
+	lastWeight string
 )
 
-// Fungsi untuk membaca data dari timbangan (RS232)
 func readWeight() {
 	buffer := make([]byte, 128)
 	var prevData string
@@ -60,26 +61,21 @@ func readWeight() {
 	}
 }
 
-// Fungsi untuk mengekstrak berat dari data mentah
 func parseWeight(data string) string {
-	re := regexp.MustCompile(`([+-])\s*0*(\d+)Kg`) // Format contoh: "+ 000010Kg"
+	re := regexp.MustCompile(`([+-])\s*0*(\d+)Kg`)
 	match := re.FindStringSubmatch(data)
 
 	if len(match) == 3 {
-		sign := match[1]   // + atau -
-		number := match[2] // Angka tanpa leading zero
-
-		// Hapus tanda '+' jika ada
+		sign := match[1]
+		number := match[2]
 		if sign == "+" {
 			return number
 		}
 		return sign + number
 	}
-
 	return ""
 }
 
-// Fungsi untuk menambahkan klien SSE baru
 func addClient(ctx context.Context) *SSEClient {
 	client := &SSEClient{
 		ctx:  ctx,
@@ -93,7 +89,6 @@ func addClient(ctx context.Context) *SSEClient {
 	return client
 }
 
-// Fungsi untuk menghapus klien jika mereka disconnect
 func removeClient(client *SSEClient) {
 	clients.Lock()
 	defer clients.Unlock()
@@ -106,7 +101,6 @@ func removeClient(client *SSEClient) {
 		}
 	}
 
-	// Tutup koneksi jika tidak ada klien yang tersisa
 	if len(clients.list) == 0 {
 		portMutex.Lock()
 		if port != nil {
@@ -118,10 +112,9 @@ func removeClient(client *SSEClient) {
 	}
 }
 
-// Fungsi untuk broadcast data ke semua klien SSE dan menyimpan data terakhir
 func broadcast(data string) {
 	clients.Lock()
-	lastWeight = data // Simpan data terakhir
+	lastWeight = data
 	clients.Unlock()
 
 	for _, client := range clients.list {
@@ -134,10 +127,27 @@ func broadcast(data string) {
 }
 
 func main() {
+	// Load .env file
+	if err := godotenv.Load(); err != nil {
+		log.Println("Gagal membaca file .env, menggunakan nilai default")
+	}
+
+	serialPort := os.Getenv("SERIAL_PORT")
+	if serialPort == "" {
+		serialPort = "COM3" // Default port jika tidak ada di .env
+	}
+
+	portConfig := &serial.Config{
+		Name:     serialPort,
+		Baud:     9600,
+		Size:     7,
+		Parity:   serial.ParityEven,
+		StopBits: serial.Stop1,
+	}
+
 	e := echo.New()
 	e.Use(middleware.Logger())
 
-	// Endpoint untuk mendapatkan berat terakhir dalam format JSON
 	e.GET("/weight", func(c echo.Context) error {
 		clients.Lock()
 		defer clients.Unlock()
@@ -148,37 +158,24 @@ func main() {
 		return c.JSON(200, map[string]string{"weight": lastWeight})
 	})
 
-	// Endpoint SSE untuk streaming berat
 	e.GET("/stream", func(c echo.Context) error {
-		// Buka koneksi serial jika belum terbuka
 		portMutex.Lock()
 		if port == nil {
-			config := &serial.Config{
-				Name:     "COM3", //COM3, COM4, /dev/ttyUSB0
-				Baud:     9600,
-				Size:     7,
-				Parity:   serial.ParityEven,
-				StopBits: serial.Stop1,
-			}
-
 			var err error
-			port, err = serial.OpenPort(config)
+			port, err = serial.OpenPort(portConfig)
 			if err != nil {
 				portMutex.Unlock()
 				log.Printf("Gagal membuka port serial: %v", err)
 				return c.JSON(500, map[string]string{"error": "Gagal membuka koneksi ke timbangan"})
 			}
 			fmt.Println("Serial port dibuka.")
-			go readWeight() // Mulai membaca data
+			go readWeight()
 		}
 		portMutex.Unlock()
 
-		// Set Header untuk SSE
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
-
-		// Kirim ping untuk memastikan header langsung dikirim
 		_, err := c.Response().Write([]byte(":\n\n"))
 		if err != nil {
 			return err
@@ -198,12 +195,17 @@ func main() {
 					log.Printf("Gagal menulis ke SSE: %v", err)
 					return err
 				}
-				c.Response().Flush() // Pastikan data langsung dikirim ke klien
+				c.Response().Flush()
 			case <-c.Request().Context().Done():
 				return nil
 			}
 		}
 	})
 
-	e.Logger.Fatal(e.Start(":8080"))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	e.Logger.Fatal(e.Start(":" + port))
 }
