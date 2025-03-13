@@ -158,7 +158,7 @@ func main() {
 		return c.JSON(200, map[string]string{"weight": lastWeight})
 	})
 
-	e.GET("/stream", func(c echo.Context) error {
+	e.GET("/weight/stream", func(c echo.Context) error {
 		portMutex.Lock()
 		if port == nil {
 			var err error
