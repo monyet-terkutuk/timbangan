@@ -146,6 +146,13 @@ func main() {
 	}
 
 	e := echo.New()
+
+	// CORS Middleware
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"}, // Sesuaikan dengan domain yang ingin diizinkan
+		AllowMethods: []string{echo.GET, echo.POST, echo.PUT, echo.DELETE},
+	}))
+
 	e.Use(middleware.Logger())
 
 	e.GET("/weight", func(c echo.Context) error {
@@ -176,11 +183,21 @@ func main() {
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
-		_, err := c.Response().Write([]byte(":\n\n"))
-		if err != nil {
-			return err
+
+		// Kirim data berat terakhir saat klien pertama kali terkoneksi
+		clients.Lock()
+		if lastWeight != "" {
+			jsonData := fmt.Sprintf(`{"weight": "%s"}`, lastWeight)
+			event := fmt.Sprintf("data: %s\n\n", jsonData)
+			_, err := c.Response().Write([]byte(event))
+			if err != nil {
+				clients.Unlock()
+				log.Printf("Gagal menulis data awal SSE: %v", err)
+				return err
+			}
+			c.Response().Flush()
 		}
-		c.Response().Flush()
+		clients.Unlock()
 
 		client := addClient(c.Request().Context())
 		defer removeClient(client)
